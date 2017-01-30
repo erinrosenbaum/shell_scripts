@@ -1,0 +1,366 @@
+#!/bin/sh
+
+# Author: Erin Rosenbaum
+# cs_344 operating_systems winter_2017
+# Assignment 1 - stats 
+# Description: Calculate the average and median for data
+# by the column or row. Accepts stdin and file input.
+
+#************************************************
+validate_first_input ()
+{
+	  if [[ $1 == -r* ]]
+	  then
+	    echo "Find the statistics by row"
+  	  # get_row_stats "$2" 
+	
+	  elif [[ $1 == -c* ]]
+	  then
+	    echo "Find the statistics by columns"
+  	  get_col_stats "$2"
+	
+	  else 	
+	    echo "./stats {-r* | -c*} [file]" 1>&2
+		  exit 1
+	  fi 
+		exit 0
+}
+#**********************************************************
+validate_second_input()
+{
+	# Check input file for existence, readability, and emptiness
+
+	# create a boolean to track errors
+	local errors=0
+
+  if ! [[ -e "$FILE" ]]
+	then
+	  echo -e "Can't find file!\n" 1>&2
+		errors=1
+	fi
+
+  if ! [[ -r "$FILE" ]]
+	then
+	  # display file name here
+	  echo -e "Cannot read file!\n" 1>&2
+	  errors=1
+	fi
+
+  # if a specified input file is empty, this is not an error 
+	if [[ -z "$FILE" ]]
+	then
+	  echo -e "The file is empty!\n" 
+	fi	
+
+  if [[ $errors == 1 ]]
+	then
+	  exit 1
+	fi	
+}
+#*********************************************
+get_row_stats()
+{
+  # While loop to read in entire file or 
+	# receive standard input one line at-a-time
+ 
+   
+  # read in first line to get the number of columns
+	line=$(head -n 1 $1)
+	count=$(echo "$line" | wc -w)
+
+  # if the count is zero, exit
+   if [[ $count -eq 0 ]]
+   then
+	   echo "Count is zero"
+	   echo "./stats {-rows|-cols} [file]" 1>&2
+	   exit 1
+	 fi
+
+  echo -e "Average\tMedian"	
+
+	# loop over each row to validate that input is numerical
+	# and also get the sum
+	while read myLine
+	do
+      sum=0
+   
+	    for num in $myLine
+      do  
+			    # check that current word is numeric
+			    if ! [[ $num =~ ^-?[0-9]+$ ]]
+			    then
+              echo -e "Received non-numeric input\n./stats {-rows|-cols} [file]" 1>&2
+		          exit 1
+			    fi
+
+			    sum=`expr $sum + $num` 
+      done
+
+  # sorts line and puts it into a column
+	# trims off white space and replaces with newline 
+	# and then sorts numerically with -n flag 
+  sorted=$(echo $myLine | tr " " "\n"| sort -n)
+  
+  # boolean calculated using the modulus
+  two=2
+  med_index=`expr $count / $two`
+  array=($sorted)
+  med=${array[$med_index]}
+  # the avg below truncates the decimals, but rounding is wanted
+  avg=`expr $sum / $count`
+
+	# Calculates the decimal and determines which way to round
+  mod=`expr $sum % $count`
+  ten=10
+  mod10=$((ten*mod))
+  integer=`expr $mod10 / $count`
+  # add 1 to the average if mod/count => 0.5 
+  if [[ $integer -ge 5 ]]
+  then
+    avg=$[ $avg + 1 ]
+  fi
+
+  # print out averages and medians to the console
+  echo -e  "$avg\t$med"   
+done < $1
+
+if [ -f TMP_$$ ] ; then
+  rm -f TMP_$$ 
+fi
+
+exit 0 
+}
+#**********************************************
+get_col_stats()
+{
+  #FILE=TMP_$$
+  #trap "rm -f TMP_$$; echo 'TRAP'; exit 1" INT HUP TERM	
+
+	# read first line of first argument and get
+	# row and column counts
+  line=$(head -n 1 $1)
+	col_count=$(echo "$line" | wc -w)
+	row_count=$(cat $1 | wc -l)
+	
+	# loop through all of the rows once for each column
+	for (( i=1; i <= $col_count; i=i+1)); do
+    sum=0	  
+	  row_num=0 
+		
+		  # read one line at-a-time from input file
+		  while read myLine
+      do
+
+		      # keeps track of how many lines have been read in
+		      row_num=$[ row_num + 1]
+
+          # check that current input is numeric
+			    for num in $myLine
+			    do
+			          if ! [[ $num =~ ^-?[0-9]+$ ]]
+			          then
+                     echo -e "Received non-numeric input\n./stats {-rows|-cols} [file]" 1>&2
+			               exit 1
+			          fi
+          done
+			
+			    # create a new file for the first row, 
+			    # and append that file for the following rows
+			    # use cut to slice out the current column
+			    if [ $row_num -eq 1 ]
+			    then
+				      echo "$myLine" | cut -f $i | tr "\t" "\n" | sort -n  > TMP_$$ 
+							trap "rm -f TMP_$$; exit 1" INT HUP TERM
+			    else	
+			 	      echo "$myLine" | cut -f $i | tr "\t" "\n" | sort -n >> TMP_$$
+							trap "rm -f TMP_$$; exit 1" INT HUP TERM
+			    fi  
+
+			    # use cut to grab the value that is in the current column 
+			    # to get the sum of the current column
+			    num=$(echo "$myLine" | cut -f $i | sort -n)
+			    sum=$((sum+num))
+      
+		# end of reading all lines from input file
+		done < $1	
+
+    # calculate statistics
+    # create a string from temp file 	
+	  str=$(cat $FILE | sort -n | tr ' ' '\t')
+		med_index=$((row_count/2))
+
+		# creates a sorted string for each column
+		arr=($(for x in "${str[@]}"; do echo "$x"; done | sort -n))
+	  median=${arr[$med_index]}
+		
+		# the avg below truncates the decimals, but we want rounding
+		avg=`expr $sum / $row_count`
+	
+	  # Calculates the decimal and determines which way to round
+		mod=`expr $sum % $row_count`
+		ten=10
+    mod10=$((ten*mod))
+		integer=`expr $mod10 / $row_count`
+		
+		# add 1 to the average if mod/count => 0.5
+		if [[ $integer -ge 5 ]]
+	 	then
+			  avg=$[ $avg + 1 ]
+    fi
+
+    # push the average and median for the current column to a new temp file
+		# create a new file for the first row
+	  if [[ $row_num == 1 ]]
+	  then
+		    echo "$avg" | tr "\n" "\t " > TMP_AVG_$$
+				trap "rm -f TMP_AVG_$$; exit 1" INT HUP TERM
+		    echo "$median" | tr "\n" "\t" > TMP_MED_$$
+				trap "rm -f TMP_MED_$$; exit 1" INT HUP TERM
+		else
+			  echo "$avg" | tr "\n" "\t" >> TMP_AVG_$$
+        echo "$median" | tr "\n" "\t" >> TMP_MED_$$
+    fi
+
+		# end of loop, loop to next column
+	done
+
+	echo "Averages:"
+  cat "TMP_AVG_$$"
+	echo -e "\nMedians:"
+	cat  "TMP_MED_$$"
+	echo -e ""
+
+	rm -f TMP_AVG_$$
+	rm -f TMP_MED_$$
+  rm -f TMP_$$
+
+  exit 0
+}
+#**********************************************
+# Begin program execution here
+#**********************************************
+# if no parameters are entered, output error message
+if [ $# -eq 0 ]
+then 
+	  echo "./stats {-rows|-cols} [file]" 1>&2
+		exit 1
+
+# Output error message if more than 2 parameters 
+elif [ $# -ge 3 ]
+then
+	  echo "./stats {-rows|-cols} [file]" 1>&2
+		exit 1
+
+# Read from stdin when a file is not specified, when 
+# only a single parameter is entered
+elif [ $# -eq 1 ]
+then
+
+    if [[ $1 == -r* ]]
+	  then
+  	    # prompt user and store input values in temp file 
+		    #echo -e "\nPlease provide input values\nPress enter at the end of each row\nUse Control + d to quit! "
+        FILE=TMP_$$
+	      cat > $FILE
+		    trap "rm -f TMP_$$; exit 1" INT HUP TERM
+        get_row_stats "$FILE"
+        rm -f TMP_$$
+	  
+		elif [[ $1 == -c* ]]
+	  then
+	      # echo "Find by columns"
+	      # prompt user and store input values in temp file 
+        # echo -e "\nPlease provide input values\nPress enter at the end of each row\nUse Control + d to quit! "
+		    FILE=TMP_$$
+	 	    cat > $FILE
+			  temp_file=temp_$$
+		    trap "rm -f TMP_$$; exit 1" INT HUP TERM
+			  line=$(head -n 1 TMP_$$)
+        col_count=$(echo "$line" | wc -w) 
+	
+	      for ((i=0; i<$col_count; i=i+1));
+			  do	
+				    sum=0
+						row_count=0
+						str=$(echo -e "\n")
+					
+					  while read -a line
+						do
+                 row_count=`expr $row_count + 1`
+						     num="${line[$i]}"
+               
+							   if [ $row_count -eq 1 ]
+							   then
+						         echo  "$num"  > temp_$$ 
+							   else
+							       echo  "$num"  >> temp_$$ 
+							   fi
+
+							   sum=`expr $sum + $num`
+	          
+						done < $FILE
+
+						string=$(cat temp_$$	| sort -n | tr ' ' '\t')				
+            med_index=$((row_count/2))
+
+            arry=($(for x in "${string[@]}"; do echo "$x"; done | tr "\n" "\t" | sort -n))
+						median=${arry[$med_index]}
+						
+						avg=`expr $sum / $row_count`
+						mod=`expr $sum % $row_count`
+						ten=10
+						mod10=$((ten*mod))
+						integer=`expr $mod10 / $row_count`
+						
+						if [[ $integer -ge 5 ]]
+						then
+							  avg=$[ $avg + 1 ]
+						fi
+
+						if [[ $row_count == 1 ]]
+						then
+						    echo "$avg" | tr "\n" "\t " > TMP_AVG_$$
+							  trap "rm -f TMP_AVG_$$; exit 1" INT HUP TERM
+							  echo "$median" | tr "\n" "\t" > TMP_MED_$$
+							  trap "rm -f TMP_MED_$$; exit 1" INT HUP TERM
+					  else	
+					      echo "$avg" | tr "\n" "\t" >> TMP_AVG_$$
+							  echo "$median" | tr "\n" "\t" >> TMP_MED_$$
+					  fi
+
+		     done
+
+      echo "Averages:"
+      cat "TMP_AVG_$$"
+		  echo -e "\nMedians:"
+		  cat  "TMP_MED_$$"
+		  echo -e ""
+
+	    rm -f TMP_$$
+	    rm -f TMP_AVG_$$
+	    rm -f TMP_MED_$$
+      rm -f temp_$$ 
+		
+		else
+      echo "./stats {-rows|-cols} [file]" 1>&2
+	    exit 1
+    fi
+
+# When two parameters are given
+else # [ $# -eq 2 ]
+  FILE=$2
+	validate_second_input "$FILE"
+	  if [[ $1 == -r* ]]
+	  then
+	      # echo "Find the statistics by row"
+  	    get_row_stats "$FILE" 
+	
+	  elif [[ $1 == -c* ]]
+	  then
+	      # echo "Find the statistics by columns"
+  	    get_col_stats "$FILE"
+	  else 	
+	      echo "./stats {-rows|-cols} [file]" 1>&2
+		    exit 1
+	  fi 
+fi	
